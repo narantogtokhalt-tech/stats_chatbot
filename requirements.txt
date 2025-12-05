@@ -1,8 +1,8 @@
 fastapi
 uvicorn[standard]
 
-numpy
 pandas
+numpy
 pytz
 python-dateutil
 
@@ -11,5 +11,6 @@ jsonschema
 python-dotenv
 
 matplotlib
-google-genai
 requests
+google-genai
+openpyxl

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Intent",
+  "type": "object",
+
+  "required": [
+    "op",
+    "period",
+    "date",
+    "metric",
+    "sheet"
+  ],
+
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "value",
+        "yoy",
+        "avg_months",
+        "avg_rows",
+        "avg_weighted"
+      ]
+    },
+
+    "period": {
+      "type": "string",
+      "enum": ["day", "month"]
+    },
+
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+
+    "months": {
+      "type": "integer",
+      "minimum": 1
+    },
+
+    "metric": {
+      "type": "string",
+      "enum": [
+        "value_usd",
+        "value_mnt",
+        "qty_ton",
+        "price_usd",
+        "value_today_usd",
+        "value_7d_avg",
+        "value_month_avg"
+      ]
+    },
+
+    "sheet": {
+      "type": "string",
+      "enum": [
+        "Нийт Экспорт",
+        "Нийт Импорт",
+        "Уул уурхайн биржийн арилжаа",
+        "Экспорт бүтээгдэхүүнээр",
+        "Импорт бүтээгдэхүүнээр"
+      ]
+    },
+
+    "product": {
+      "type": ["string", "null"],
+      "default": "ALL"
+    },
+
+    "filters": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "default": {}
+    },
+
+    "chart": {
+      "type": "string",
+      "enum": ["line", "bar", "none"],
+      "default": "line"
+    }
+  },
+
+  "additionalProperties": false
+}

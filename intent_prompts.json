@@ -1,0 +1,11 @@
+{
+  "missing_sheet": "Ямар sheet-ээс хайх вэ? Боломжит: Нийт Экспорт, Нийт Импорт, Уул уурхайн биржийн арилжаа, Экспорт бүтээгдэхүүнээр, Импорт бүтээгдэхүүнээр.",
+  "missing_metric": "Ямар багана/үзүүлэлт авах вэ? Боломжит: value_usd, value_mnt, qty_ton, price_usd, value_today_usd, value_7d_avg, value_month_avg.",
+  "missing_product": "Ямар бүтээгдэхүүн бэ? (нүүрс, төмөр, зэс, газрын тос, хүнсний бүтээгдэхүүн, нефтийн бүтээгдэхүүн, автомашин, бусад, ALL)",
+  "missing_date": "Ямар өдөр эсвэл сар вэ? (YYYY-MM-DD форматаар оруулна уу.)",
+  "missing_period": "Өдөр үү эсвэл сар уу? (day / month)",
+  "missing_op": "Ямар төрлийн тооцоо вэ? (value, avg_rows, avg_months, yoy)",
+  "invalid_chart": "Chart төрөл line/bar/none-оос сонгоно уу.",
+  "invalid_format": "JSON формат буруу байна. Зөвхөн JSON object буцаана уу.",
+  "ask_missing_field_template": "Таны өмнөх асуултад {field} тодорхойгүй байна. {question}"
+}

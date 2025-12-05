@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+
+numpy
+pandas
+pytz
+python-dateutil
+
+pydantic
+jsonschema
+python-dotenv
+
+matplotlib
+google-genai
+requests

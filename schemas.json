@@ -1,0 +1,254 @@
+{
+  "Нийт Экспорт": {
+    "date_col": "огноо",
+    "keywords": [
+      "нийт экспорт",
+      "экспортын дүн",
+      "нийт экспортын дүн"
+    ],
+    "metrics": {
+      "value_mnt": [
+        "Экспорт Энэ жил"
+      ],
+      "value_usd": [
+        "Экспорт Энэ жил"
+      ]
+    },
+    "metrics_meta": {
+      "value_mnt": {
+        "default_aggregate": "last"
+      },
+      "value_usd": {
+        "default_aggregate": "last"
+      }
+    }
+  },
+  "Нийт Импорт": {
+    "date_col": "огноо",
+    "keywords": [
+      "нийт импорт",
+      "импортын дүн",
+      "нийт импортын дүн"
+    ],
+    "metrics": {
+      "value_mnt": [
+        "Импорт Энэ жил"
+      ],
+      "value_usd": [
+        "Импорт Энэ жил"
+      ]
+    },
+    "metrics_meta": {
+      "value_mnt": {
+        "default_aggregate": "last"
+      },
+      "value_usd": {
+        "default_aggregate": "last"
+      }
+    }
+  },
+  "Уул уурхайн биржийн арилжаа": {
+    "date_col": "Арилжаа явагдсан өдөр",
+    "keywords": [
+      "уул уурхайн бирж",
+      "биржийн арилжаа",
+      "нүүрсний бирж"
+    ],
+    "metric_patterns": {
+      "qty_ton": "Хэмжээ /тонн/",
+      "deal_price_usd": "Хэлцлийн үнэ ($)",
+      "deal_value_usd": "Хэлцлийн үнийн дүн ($)",
+      "value_usd": "Үнийн дүн ($)",
+      "value_mnt": "Үнийн дүн /MNT/"
+    },
+    "metrics_meta": {
+      "qty_ton": {
+        "default_aggregate": "sum"
+      },
+      "deal_price_usd": {
+        "default_aggregate": "last"
+      },
+      "deal_value_usd": {
+        "default_aggregate": "sum"
+      },
+      "value_usd": {
+        "default_aggregate": "sum"
+      },
+      "value_mnt": {
+        "default_aggregate": "sum"
+      }
+    }
+  },
+  "Экспорт бүтээгдэхүүнээр": {
+    "date_col": "date",
+    "keywords": [
+      "экспорт бүтээгдэхүүнээр",
+      "нүүрсний экспорт",
+      "төмрийн экспорт",
+      "зэсийн экспорт",
+      "газрын тосны экспорт"
+    ],
+    "products": {
+      "төмөр": {
+        "aliases": [
+          "2601"
+        ],
+        "keywords": [
+          "төмөр",
+          "iron"
+        ]
+      },
+      "зэс": {
+        "aliases": [
+          "2603"
+        ],
+        "keywords": [
+          "зэс",
+          "copper"
+        ]
+      },
+      "нүүрс": {
+        "aliases": [
+          "2701"
+        ],
+        "keywords": [
+          "нүүрс",
+          "coal"
+        ]
+      },
+      "газрын тос": {
+        "aliases": [
+          "2709"
+        ],
+        "keywords": [
+          "газрын тос",
+          "oil",
+          "crude oil"
+        ]
+      }
+    },
+    "product_codes": {
+      "2601": "төмөр",
+      "2603": "зэс",
+      "2701": "нүүрс",
+      "2709": "газрын тос"
+    },
+    "metric_patterns": {
+      "qty_ton": "{code}",
+      "value_usd": "{code}-Үнийн дүн",
+      "qty_7d_avg": "7 дундаж {code}",
+      "qty_month_avg": "Сарын дундаж {code}",
+      "qty_cum": "Өссөн {code}",
+      "price_usd": "Үнэ {code}",
+      "price_7d_avg": "Үнэ 7 дундаж {code}",
+      "price_month_avg": "Үнэ Сарын дундаж {code}"
+    },
+    "metrics_meta": {
+      "qty_ton": {
+        "default_aggregate": "sum"
+      },
+      "value_usd": {
+        "default_aggregate": "sum"
+      },
+      "qty_7d_avg": {
+        "default_aggregate": "last"
+      },
+      "qty_month_avg": {
+        "default_aggregate": "last"
+      },
+      "qty_cum": {
+        "default_aggregate": "last"
+      },
+      "price_usd": {
+        "default_aggregate": "last"
+      },
+      "price_7d_avg": {
+        "default_aggregate": "last"
+      },
+      "price_month_avg": {
+        "default_aggregate": "last"
+      }
+    }
+  },
+  "Импорт бүтээгдэхүүнээр": {
+    "date_col": "date",
+    "keywords": [
+      "импорт бүтээгдэхүүнээр",
+      "нийт импорт",
+      "хүнсний импорт",
+      "нефтийн импорт",
+      "автомашины импорт"
+    ],
+    "products": {
+      "нийт импорт": {
+        "aliases": [
+          "Нийт импорт"
+        ],
+        "keywords": [
+          "нийт импорт"
+        ]
+      },
+      "хүнсний бүтээгдэхүүн": {
+        "aliases": [
+          "Хүнсний бүтээгдэхүүн"
+        ],
+        "keywords": [
+          "хүнсний"
+        ]
+      },
+      "нефтийн бүтээгдэхүүн": {
+        "aliases": [
+          "Нефтийн бүтээгдэхүүн"
+        ],
+        "keywords": [
+          "нефть",
+          "шатахуун"
+        ]
+      },
+      "автомашин, машин техник": {
+        "aliases": [
+          "Автомашин, машин техник"
+        ],
+        "keywords": [
+          "автомашин",
+          "машин техник"
+        ]
+      },
+      "бусад": {
+        "aliases": [
+          "Бусад"
+        ],
+        "keywords": [
+          "бусад"
+        ]
+      }
+    },
+    "product_codes": {
+      "Нийт импорт": "нийт импорт",
+      "Хүнсний бүтээгдэхүүн": "хүнсний бүтээгдэхүүн",
+      "Нефтийн бүтээгдэхүүн": "нефтийн бүтээгдэхүүн",
+      "Автомашин, машин техник": "автомашин, машин техник",
+      "Бусад": "бусад"
+    },
+    "metric_patterns": {
+      "value_usd": "{code}",
+      "value_today_usd": "{code} ТухайнӨ",
+      "value_7d_avg": "{code} 7 өдрийн дундаж",
+      "value_month_avg": "{code} Сарын дундаж"
+    },
+    "metrics_meta": {
+      "value_usd": {
+        "default_aggregate": "sum"
+      },
+      "value_today_usd": {
+        "default_aggregate": "sum"
+      },
+      "value_7d_avg": {
+        "default_aggregate": "last"
+      },
+      "value_month_avg": {
+        "default_aggregate": "last"
+      }
+    }
+  }
+}

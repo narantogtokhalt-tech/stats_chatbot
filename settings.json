@@ -1,0 +1,17 @@
+{
+  "llm": {
+    "provider": "google",
+    "model": "gemini-2.5-flash",
+    "max_tokens": 4096,
+    "temperature": 0.2
+  },
+  "embedding": {
+    "provider": "google",
+    "model": "embedding-001"
+  },
+  "defaults": {
+    "months": 3,
+    "topn": 30,
+    "chart": "line"
+  }
+}

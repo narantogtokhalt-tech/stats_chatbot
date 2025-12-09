@@ -6,6 +6,7 @@ import json
 import contextlib
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, date, timedelta
+from pathlib import Path  # 👈 ШИНЭ
 
 import numpy as np
 import pandas as pd
@@ -28,20 +29,20 @@ import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 load_dotenv()
 
-
 # ---------------- ENV & CONSTANTS ----------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = Path(__file__).resolve().parent
 
-DATA_DIR = os.getenv("DATA_DIR", BASE_DIR)
-EXCEL_PATH = os.getenv("EXCEL_PATH", os.path.join(DATA_DIR, "Daily Data.xlsx"))
+# DATA_DIR, EXCEL_PATH, JSON файлуудыг бүгдийг относит path болгов
+DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR))
 
-COLUMN_SYNS_FILE = os.getenv("COLUMN_SYNS_FILE", os.path.join(DATA_DIR, "column_synonyms.json"))
-FILTERS_MAP_FILE = os.getenv("FILTERS_MAP_FILE", os.path.join(DATA_DIR, "filters_map.json"))
-INTENT_SCHEMA_FILE = os.getenv("INTENT_SCHEMA_FILE", os.path.join(DATA_DIR, "intent_schema.json"))
-INTENT_PROMPTS_FILE = os.getenv("INTENT_PROMPTS_FILE", os.path.join(DATA_DIR, "intent_prompts.json"))
-INTENT_EXAMPLES_FILE = os.getenv(
-    "INTENT_EXAMPLES_FILE",
-    os.path.join(DATA_DIR, "intent_examples.json"),
+EXCEL_PATH = Path(os.getenv("EXCEL_PATH", DATA_DIR / "Daily Data.xlsx"))
+
+COLUMN_SYNS_FILE = Path(os.getenv("COLUMN_SYNS_FILE", DATA_DIR / "column_synonyms.json"))
+FILTERS_MAP_FILE = Path(os.getenv("FILTERS_MAP_FILE", DATA_DIR / "filters_map.json"))
+INTENT_SCHEMA_FILE = Path(os.getenv("INTENT_SCHEMA_FILE", DATA_DIR / "intent_schema.json"))
+INTENT_PROMPTS_FILE = Path(os.getenv("INTENT_PROMPTS_FILE", DATA_DIR / "intent_prompts.json"))
+INTENT_EXAMPLES_FILE = Path(
+    os.getenv("INTENT_EXAMPLES_FILE", DATA_DIR / "intent_examples.json")
 )
 
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Ulaanbaatar")
@@ -51,7 +52,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 TZ = pytz.timezone(TIMEZONE)
-
 
 class JSONResponseUTF8(JSONResponse):
     media_type = "application/json; charset=utf-8"
@@ -70,7 +70,7 @@ origins = [
     "http://localhost:5500",
     "http://127.0.0.1:5500",
     # Хэрвээ Netlify дээр тавих бол доор hostname-аа нэмнэ:
-    "https://medchatly.netlify.app/",
+    "https://medchatly.netlify.app",
 ]
 
 app.add_middleware(
@@ -111,9 +111,9 @@ def _norm(s: Any) -> str:
     return str(s).strip().casefold()
 
 
-def _load_json(path: str, default: Any) -> Any:
+def _load_json(path: Path | str, default: Any) -> Any:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(str(path), "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
@@ -157,8 +157,8 @@ def _parse_date_cols(df: pd.DataFrame) -> Optional[pd.Series]:
     return None
 
 
-def load_excel(path: str) -> Dict[str, Dict[str, Any]]:
-    all_sheets = pd.read_excel(path, sheet_name=None)
+def load_excel(path: Path | str) -> Dict[str, Dict[str, Any]]:
+    all_sheets = pd.read_excel(str(path), sheet_name=None)
     out: Dict[str, Dict[str, Any]] = {}
     for s_name, df0 in all_sheets.items():
         df = df0.copy()
@@ -176,7 +176,7 @@ def perform_reload() -> Dict[str, Any]:
     global DATA, ALLOWED_SHEETS, LAST_RELOAD_AT
     global COLUMN_SYNS, FILTERS_MAP, INTENT_SCHEMA, INTENT_PROMPTS, INTENT_EXAMPLES
 
-    if not os.path.exists(EXCEL_PATH):
+    if not EXCEL_PATH.exists():
         raise RuntimeError(f"Excel not found: {EXCEL_PATH}")
 
     # Excel ачаалах
@@ -213,7 +213,6 @@ def perform_reload() -> Dict[str, Any]:
         },
     )
 
-    # ⇩⇩⇩ intent_examples.json ачаална ⇩⇩⇩
     INTENT_EXAMPLES = _load_json(INTENT_EXAMPLES_FILE, [])
     if not isinstance(INTENT_EXAMPLES, list):
         INTENT_EXAMPLES = []

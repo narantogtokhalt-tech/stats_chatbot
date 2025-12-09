@@ -1,5 +1,6 @@
 # app_dashboard.py
 import os
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -9,7 +10,20 @@ from fastapi.responses import JSONResponse
 router = APIRouter(tags=["dashboard"])
 
 # ------------ CONFIG ------------
-EXCEL_PATH = os.getenv("DAILY_DATA_XLSX", r"D:\DataAnalystAgent\Daily Data.xlsx")
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# app_configured.py-той адил логик:
+DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR))
+
+# 1-р priority: EXCEL_PATH env
+# 2-р priority: DAILY_DATA_XLSX env (хуучин нэр)
+# 3: репо доторх "Daily Data.xlsx"
+EXCEL_PATH = (
+    Path(os.getenv("EXCEL_PATH"))
+    if os.getenv("EXCEL_PATH")
+    else Path(os.getenv("DAILY_DATA_XLSX", DATA_DIR / "Daily Data.xlsx"))
+)
 
 SHEET_EXPORT_TOTAL = "Нийт Экспорт"
 SHEET_IMPORT = "Нийт Экспорт"
@@ -62,7 +76,7 @@ EXCHANGE_TYPES = {
 # ------------ COMMON HELPERS ------------
 
 def _ensure_excel_exists():
-    if not os.path.exists(EXCEL_PATH):
+    if not EXCEL_PATH.exists():
         raise HTTPException(500, f"Excel not found: {EXCEL_PATH}")
 
 

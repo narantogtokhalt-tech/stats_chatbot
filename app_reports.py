@@ -1,5 +1,6 @@
 # app_reports.py
 import os
+from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -8,7 +9,19 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import JSONResponse
 
 # ================== CONFIG ==================
-EXCEL_PATH = os.getenv("DAILY_DATA_XLSX", r"D:\Ai agent\Daily Data.xlsx")
+BASE_DIR = Path(__file__).resolve().parent
+
+# app_configured.py-той ижил: DATA_DIR env байвал тэр, үгүй бол энэ folder
+DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR))
+
+# 1) EXCEL_PATH env байвал тэрийг шууд
+# 2) DAILY_DATA_XLSX env (хуучин нэр) байвал түүнтэй
+# 3) Эцэст нь DATA_DIR / "Daily Data.xlsx"
+EXCEL_PATH = (
+    Path(os.getenv("EXCEL_PATH"))
+    if os.getenv("EXCEL_PATH")
+    else Path(os.getenv("DAILY_DATA_XLSX", DATA_DIR / "Daily Data.xlsx"))
+)
 
 SHEET_EXCHANGE = "Уул уурхайн биржийн арилжаа"
 SHEET_PRODUCTS = "Экспорт бүтээгдэхүүнээр"
@@ -38,7 +51,7 @@ router = APIRouter(tags=["reports"])
 
 # ================== COMMON HELPERS ==================
 def _read_excel(sheet: str) -> pd.DataFrame:
-    if not os.path.exists(EXCEL_PATH):
+    if not EXCEL_PATH.exists():
         raise HTTPException(500, f"Excel not found: {EXCEL_PATH}")
     df = pd.read_excel(EXCEL_PATH, sheet_name=sheet)
     return df

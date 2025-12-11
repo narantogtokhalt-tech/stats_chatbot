@@ -71,7 +71,7 @@ origins = [
     "http://127.0.0.1:5500",
     # Хэрвээ Netlify дээр тавих бол доор hostname-аа нэмнэ:
     "https://medchatly.netlify.app",
-    "https://medai-chat.vercel.app/"
+    "https://medai-chat.vercel.app"
 ]
 
 app.add_middleware(

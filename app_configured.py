@@ -1402,6 +1402,10 @@ async def chat(body: ChatRequest, dep: None = Depends(require_key)):
 app.include_router(reports_router)
 app.include_router(dashboard_router)
 
+@app.get("/dashboard/health")
+def health():
+    return {"ok": True}
+
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():

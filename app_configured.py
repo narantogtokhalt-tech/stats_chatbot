@@ -3,6 +3,9 @@ import os
 import io
 import re
 import json
+import asyncio
+import time
+import httpx
 import contextlib
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, date, timedelta
@@ -1398,6 +1401,81 @@ async def chat(body: ChatRequest, dep: None = Depends(require_key)):
         },
         "result": data.get("result"),
     }
+
+# =========================
+# Dashboard aggregated API
+# =========================
+
+_DASH_ALL_CACHE = {"ts": 0.0, "ttl": 60.0, "data": None}
+
+async def _get_json(client: httpx.AsyncClient, url: str):
+    r = await client.get(url)
+    r.raise_for_status()
+    return r.json()
+
+@app.get("/dashboard/all")
+async def dashboard_all(request: Request, debug: int = 0):
+    """
+    Aggregated endpoint (1 call):
+      - /dashboard/export/products-timeline
+      - /dashboard/export/products-value-monthly
+      - /dashboard/export/total
+      - /dashboard/exchange/timeline
+      - /dashboard/coal-cny/latest
+
+    debug=1 үед cache алгасна + __errors буцаана
+    """
+
+    now = time.time()
+
+    # ✅ TTL cache (debug=1 үед cache алгасна)
+    if not debug:
+        ts = _DASH_ALL_CACHE["ts"]
+        ttl = _DASH_ALL_CACHE["ttl"]
+        if _DASH_ALL_CACHE["data"] is not None and (now - ts) < ttl:
+            return JSONResponseUTF8(_DASH_ALL_CACHE["data"], headers={"x-cache": "HIT"})
+
+    base = str(request.base_url).rstrip("/")
+
+    urls = {
+        "productsTimeline": f"{base}/dashboard/export/products-timeline",
+        "productsValueMonthly": f"{base}/dashboard/export/products-value-monthly",
+        "exportTotal": f"{base}/dashboard/export/total",
+        "exchangeTimeline": f"{base}/dashboard/exchange/timeline",
+        "coalLatest": f"{base}/dashboard/coal-cny/latest",
+    }
+
+    # ✅ Render дээр 10s дэндүү бага байсан → 30s болгоё
+    timeout = httpx.Timeout(30.0, connect=10.0)
+
+    ok: Dict[str, Any] = {}
+    rej: Dict[str, str] = {}
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        tasks = {k: asyncio.create_task(_get_json(client, u)) for k, u in urls.items()}
+
+        for k, t in tasks.items():
+            try:
+                ok[k] = await t
+            except Exception as e:
+                rej[k] = str(e)
+
+    payload: Dict[str, Any] = {
+        "base": base,
+        "data": ok,
+    }
+    if debug:
+        payload["__errors"] = rej
+
+    if not debug:
+        _DASH_ALL_CACHE["ts"] = now
+        _DASH_ALL_CACHE["data"] = payload
+
+    headers = {
+        "cache-control": "public, max-age=60",
+        "x-cache": "MISS" if not debug else "BYPASS",
+    }
+    return JSONResponseUTF8(payload, headers=headers)
 
 app.include_router(reports_router)
 app.include_router(dashboard_router)

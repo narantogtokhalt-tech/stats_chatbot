@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
-import jwt
+from jose import jwt
 from jwt import PyJWTError
 from fastapi import Request, HTTPException
 

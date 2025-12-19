@@ -1,27 +1,35 @@
-fastapi
-uvicorn[standard]
+# Core
+fastapi>=0.125.0
+uvicorn[standard]>=0.38.0
 
-pandas
-numpy
-pytz
-python-dateutil
+# Data
+pandas>=2.3
+numpy>=2.3
+pytz>=2025.2
+python-dateutil>=2.9
 
-pydantic
-jsonschema
-python-dotenv
+# Validation
+pydantic>=2.7
+email-validator
+jsonschema>=4.25
 
-matplotlib
-requests
-google-genai
-openpyxl
+# Config
+python-dotenv>=1.0
 
-SQLAlchemy>=2.0
-asyncpg>=0.29
-passlib[bcrypt]>=1.7.4
+# Visualization
+matplotlib>=3.10
+openpyxl>=3.1
 
-python-jose[cryptography]>=3.3.0  
-bcrypt>=4.1.0                      
+# HTTP
 httpx>=0.28
 
-email-validator
-                        
+# AI
+google-genai>=1.50
+
+# Database
+SQLAlchemy>=2.0
+asyncpg>=0.29
+
+# Auth / Security
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.1.0

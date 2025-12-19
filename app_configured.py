@@ -7,6 +7,8 @@ import asyncio
 import time
 import httpx
 import contextlib
+import secrets
+from uuid import uuid4
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, date, timedelta
 from pathlib import Path  # 👈 ШИНЭ
@@ -18,7 +20,8 @@ from dateutil import parser as dateparser, relativedelta
 
 from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from typing import Literal
 from fastapi.middleware.cors import CORSMiddleware
 from app_reports import router as reports_router
 from app_dashboard import router as dashboard_router
@@ -29,23 +32,37 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from auth_utils import (
+    verify_password,
+    hash_password,
+    create_access_token,
+    decode_token,
+    require_jwt_user,
+    require_jwt_admin,
+)
+from fastapi import Security
+
+
 from dotenv import load_dotenv
 load_dotenv()
+
 
 # ---------------- ENV & CONSTANTS ----------------
 BASE_DIR = Path(__file__).resolve().parent
 
 # DATA_DIR, EXCEL_PATH, JSON файлуудыг бүгдийг относит path болгов
-DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR))
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR)))
 
-EXCEL_PATH = Path(os.getenv("EXCEL_PATH", DATA_DIR / "Daily Data.xlsx"))
+EXCEL_PATH = Path(os.getenv("EXCEL_PATH", str(DATA_DIR / "Daily Data.xlsx")))
 
-COLUMN_SYNS_FILE = Path(os.getenv("COLUMN_SYNS_FILE", DATA_DIR / "column_synonyms.json"))
-FILTERS_MAP_FILE = Path(os.getenv("FILTERS_MAP_FILE", DATA_DIR / "filters_map.json"))
-INTENT_SCHEMA_FILE = Path(os.getenv("INTENT_SCHEMA_FILE", DATA_DIR / "intent_schema.json"))
-INTENT_PROMPTS_FILE = Path(os.getenv("INTENT_PROMPTS_FILE", DATA_DIR / "intent_prompts.json"))
+COLUMN_SYNS_FILE = Path(os.getenv("COLUMN_SYNS_FILE", str(DATA_DIR / "column_synonyms.json")))
+FILTERS_MAP_FILE = Path(os.getenv("FILTERS_MAP_FILE", str(DATA_DIR / "filters_map.json")))
+INTENT_SCHEMA_FILE = Path(os.getenv("INTENT_SCHEMA_FILE", str(DATA_DIR / "intent_schema.json")))
+INTENT_PROMPTS_FILE = Path(os.getenv("INTENT_PROMPTS_FILE", str(DATA_DIR / "intent_prompts.json")))
 INTENT_EXAMPLES_FILE = Path(
-    os.getenv("INTENT_EXAMPLES_FILE", DATA_DIR / "intent_examples.json")
+    os.getenv("INTENT_EXAMPLES_FILE", str(DATA_DIR / "intent_examples.json"))
 )
 
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Ulaanbaatar")
@@ -85,11 +102,235 @@ app.add_middleware(
     allow_headers=["*"],            # Content-Type, x-api-key гэх мэт
 )
 
-# ---------------- AUTH ----------------
+# ---------------- AUTH (API KEY) ----------------
 async def require_key(request: Request, x_api_key: Optional[str] = Header(None)) -> None:
     key = x_api_key or request.query_params.get("api_key")
     if key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+# =========================
+# Auth / Users (Postgres + bcrypt)
+# =========================
+import uuid
+from sqlalchemy import String, Boolean, DateTime, select, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from passlib.context import CryptContext
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "dev-admin-token")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# --- Render-ийн postgres:// -> postgresql+asyncpg:// хөрвүүлэлт (шаардлагатай үед) ---
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL missing in environment")
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+async def get_db() -> AsyncSession:
+    async with SessionLocal() as db:
+        yield db
+
+def _public_user(u: User) -> Dict[str, Any]:
+    return {
+        "id": u.id,
+        "name": u.name,
+        "email": u.email,
+        "role": u.role,
+        "disabled": bool(u.disabled),
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+    }
+
+# ========= NextAuth Credentials login =========
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/auth/login")
+async def auth_login(
+    body: LoginRequest,
+    dep: None = Depends(require_key),
+    db: AsyncSession = Depends(get_db),
+):
+    q = text("""
+        select id, name, email, password_hash, role, disabled
+        from public.users
+        where lower(email) = lower(:email)
+        limit 1
+    """)
+    r = await db.execute(q, {"email": body.email})
+    row = r.mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if row["disabled"]:
+        raise HTTPException(status_code=403, detail="User is disabled")
+
+    if not verify_password(body.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_access_token(sub=row["id"], role=row["role"], email=row["email"])
+
+    return {
+        "user": {
+            "id": row["id"],
+            "name": row["name"],
+            "email": row["email"],
+            "role": row["role"],
+        },
+        "accessToken": token,
+    }
+
+# ========= Admin CRUD =========
+class UserCreateReq(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    role: Literal["admin", "user"] = "user"
+
+class UserUpdateReq(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[Literal["admin", "user"]] = None
+    disabled: Optional[bool] = None
+
+async def admin_guard(
+    request: Request,
+    dep: None = Depends(require_key),
+) -> dict:
+    return await require_jwt_admin(request)
+
+@app.get("/auth/users")
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    jwt: dict = Depends(admin_guard),  # ✅ нэг мөрөөр цэвэр
+):
+    q = text("""
+      select id, name, email, role, disabled, created_at, updated_at
+      from public.users
+      order by created_at desc
+    """)
+    r = await db.execute(q)
+    return {"users": [dict(x) for x in r.mappings().all()]}
+
+@app.post("/auth/users")
+async def create_user(
+    body: UserCreateReq,
+    db: AsyncSession = Depends(get_db),
+    _jwt: dict = Depends(admin_guard),
+):
+    # email давхардал шалгах
+    r = await db.execute(
+        text("select 1 from public.users where lower(email)=lower(:e)"),
+        {"e": str(body.email).strip()},
+    )
+    if r.first():
+        raise HTTPException(status_code=409, detail="Email already exists")
+
+    uid = f"user-{uuid4().hex[:12]}"
+    ph = hash_password(body.password)
+
+    await db.execute(
+        text("""
+          insert into public.users (id, name, email, password_hash, role, disabled)
+          values (:id, :name, :email, :ph, :role, false)
+        """),
+        {
+            "id": uid,
+            "name": body.name.strip(),
+            "email": str(body.email).strip(),
+            "ph": ph,
+            "role": body.role,
+        },
+    )
+    await db.commit()
+
+    return {
+        "ok": True,
+        "user": {
+            "id": uid,
+            "name": body.name.strip(),
+            "email": str(body.email).strip(),
+            "role": body.role,
+            "disabled": False,
+        },
+    }
+
+@app.patch("/auth/users/{user_id}")
+async def update_user(
+    user_id: str,
+    body: UserUpdateReq,
+    db: AsyncSession = Depends(get_db),
+    _jwt: dict = Depends(admin_guard),
+):
+    # user байгаа эсэх
+    r = await db.execute(text("select id from public.users where id=:id"), {"id": user_id})
+    if not r.first():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    sets = []
+    params = {"id": user_id}
+
+    if body.name is not None:
+        sets.append("name = :name")
+        params["name"] = body.name.strip()
+
+    if body.role is not None:
+        sets.append("role = :role")
+        params["role"] = body.role
+
+    if body.disabled is not None:
+        sets.append("disabled = :disabled")
+        params["disabled"] = bool(body.disabled)
+
+    if body.password is not None:
+        sets.append("password_hash = :ph")
+        params["ph"] = hash_password(body.password)
+
+    if not sets:
+        return {"ok": True}
+
+    sets.append("updated_at = now()")
+
+    sql = f"update public.users set {', '.join(sets)} where id = :id"
+    await db.execute(text(sql), params)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.delete("/auth/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _jwt: dict = Depends(admin_guard),
+):
+    if user_id == "admin-1":
+        raise HTTPException(status_code=400, detail="Cannot delete primary admin")
+
+    await db.execute(text("delete from public.users where id=:id"), {"id": user_id})
+    await db.commit()
+    return {"ok": True}
 
 
 # ---------------- LLM CLIENT ----------------
@@ -237,18 +478,17 @@ def build_intent_prompt(q: str) -> str:
     today = datetime.now(TZ).date().isoformat()
     sheets_str = ", ".join([f'"{s}"' for s in (ALLOWED_SHEETS or ["ALL"])])
 
-    # ---- 1. Суурь заавар (rules) ----
     instr = (
         "ЧАМД НЭГ МОНГОЛ ХЭЛ ДЭЭРХ АСУУЛТ ӨГНӨ.\n"
         "ЧИ ЗӨВХӨН JSON ОБЪЕКТ БУЦААНА. ӨӨР ТЕКСТ БИЧИХГҮЙ.\n"
         "JSON бүтэц нь дараах Keys-тай байна:\n"
         "  - sheet : аль sheet-ээс авахыг заана. ALLOWED_SHEETS дотроос нэгийг сонго.\n"
-        "  - metric : үзүүлэлтийн түлхүүр (ж: qty_ton, value_usd, value_mnt, price_usd, value_today_usd, value_7d_avg, value_month_avg, qty_cum ...).\n"
+        "  - metric : үзүүлэлтийн түлхүүр (ж: qty_ton, value_usd, value_mnt, үнэ г.м.).\n"
         "  - op : \"value\" | \"avg_rows\" | \"avg_months\" | \"yoy\" | \"avg_weighted\".\n"
         "  - period : \"day\" эсвэл \"month\".\n"
         "  - date : \"YYYY-MM-DD\" формат.\n"
-        "  - months : бүх тохиолдолд заавал integer; зөвхөн op=\"avg_months\" үед ашиглана. БУСАД ҮЕД ЗҮГЭЭР ДҮФОЛТ 3 байж болно.\n"
-        "  - filters : object (ж: {\"product\": \"нүүрс\"} гэх мэт бүтээгдэхүүн, сегмент гэх мэт фильтр тавина).\n"
+        "  - months : бүх тохиолдолд заавал integer; зөвхөн op=\"avg_months\" үед ашиглана. БУСАД ҮЕД ДҮФОЛТ 3 байж болно.\n"
+        "  - filters : object.\n"
         "  - chart : \"line\" | \"bar\" | \"none\" | \"box\" | \"area\".\n"
         "\n"
         "ALLOWED_SHEETS дараах байна:\n"
@@ -257,29 +497,15 @@ def build_intent_prompt(q: str) -> str:
         "Онцгой дүрмүүд:\n"
         f"  - \"өнөөдөр\" гэж байвал date = \"{today}\".\n"
         f"  - \"өчигдөр\" гэж байвал date = өнөөдөр - 1 өдөр.\n"
-        "  - \"энэ сар\", \"[YYYY оны] [N] сар\" гэж байвал period=\"month\" гэж ойлгож, date = тухайн сарын 1-ний өдөр болго.\n"
-        "  - \"сарын дундаж\" гэж байвал op=\"avg_rows\", period=\"month\".\n"
-        "  - \"сарын нийлбэр\", \"сарын нийт\", \"нийт дүн\" гэх мэт байвал op=\"value\", period=\"month\".\n"
+        "  - \"энэ сар\" гэвэл period=\"month\" гэж ойлгоод date = тухайн сарын 1.\n"
+        "  - \"сарын дундаж\" гэвэл op=\"avg_rows\", period=\"month\".\n"
         "  - \"сүүлийн N сар\" гэвэл op=\"avg_months\", months=N.\n"
         "  - \"мөн үе\", \"өмнөх оны мөн үе\" гэвэл op=\"yoy\".\n"
-        "  - Хэрвээ chart төрлийг дурдоогүй байвал chart=\"line\" гэж үз.\n"
+        "  - Chart дурдоогүй бол chart=\"line\".\n"
         "\n"
-        "Нэмэлт нарийн дүрэм:\n"
-        "  1) Хэрвээ асуултанд \"нийт экспорт\" гэж байвал ихэвчлэн sheet=\"Нийт Экспорт\".\n"
-        "  2) Хэрвээ \"нийт импорт\" байвал sheet=\"Нийт Импорт\".\n"
-        "  3) Хэрвээ \"нүүрсний экспорт\", \"зэсийн экспорт\", \"төмрийн экспорт\", \"газрын тосны экспорт\" гэвэл sheet=\"Экспорт бүтээгдэхүүнээр\" гэж сонгож,\n"
-        "     filters.product-ийг \"нүүрс\" / \"зэс\" / \"төмөр\" / \"газрын тос\" гэж оноо.\n"
-        "  4) \"Хүнсний бүтээгдэхүүний импорт\", \"нефтийн бүтээгдэхүүний импорт\" гэх мэт байвал sheet=\"Импорт бүтээгдэхүүнээр\" гэж сонгож,\n"
-        "     filters.product-ийг \"хүнсний бүтээгдэхүүн\", \"нефтийн бүтээгдэхүүн\", \"автомашин, машин техник\", \"бусад\" гэх мэтээр оноо.\n"
-        "  5) Нийт экспорт / импортын sheet дээрх \"сарын өссөн\" эсвэл \"сарын дүн\" гэж асуусан бол op=\"value\", period=\"month\" гэж ойлго.\n"
-        "  6) Хэрвээ асуулт сар/жил/өдрийн тодорхой огноо хэлсэн бол тэрийг бүгдийг \"date\" дээр зөв YYYY-MM-DD болгож өг.\n"
-        "\n"
-        "ГОЛ НЬ: ФИНАЛ ГАРАЛТ НЬ ЗӨВХӨН JSON ОБЪЕКТ БАЙНА. `\"intent\"` гэх нэмэлт wrapper, тайлбар, markdown, текст БҮҮ БИЧ.\n"
-        "ЗӨВХӨН ИНТЕНТИЙН JSON.\n"
-        "\n"
+        "ФИНАЛ ГАРАЛТ НЬ ЗӨВХӨН JSON ОБЪЕКТ.\n"
     )
 
-    # ---- 2. Few-shot жишээнүүд ----
     fewshot_block = ""
     if INTENT_EXAMPLES:
         max_examples = min(15, len(INTENT_EXAMPLES))
@@ -305,10 +531,6 @@ def build_intent_prompt(q: str) -> str:
     return final_prompt
 
 def llm_json(prompt: str) -> Dict[str, Any]:
-    """
-    Gemini-ээс STRICT JSON авах. Алдаа гарвал консол дээр лог бичээд
-    default intent буцаана.
-    """
     try:
         resp = gclient.models.generate_content(
             model=GEMINI_MODEL,
@@ -338,9 +560,6 @@ def llm_json(prompt: str) -> Dict[str, Any]:
         }
 
 def llm_chat(prompt: str) -> str:
-    """
-    Ерөнхий текстэн чат / тайлбар авахад ашиглана.
-    """
     try:
         resp = gclient.models.generate_content(
             model=GEMINI_MODEL,
@@ -461,10 +680,6 @@ def find_metric_column(sheet: str, metric_key: str) -> Optional[str]:
     return num_cols[0] if num_cols else None
 
 def _pick_export_product_column(headers: list[str], metric_key: str, filters: Dict[str, Any]) -> Optional[str]:
-    """
-    Экспорт бүтээгдэхүүнээр sheet:
-    product фильтерээс хамаараад 2601 / 2603 / 2701 / 2709 аль баганыг сонгохыг шийднэ.
-    """
     sheet_products = {
         "төмөр": "2601",
         "төмрийн хүдэр": "2601",
@@ -518,12 +733,6 @@ def _pick_export_product_column(headers: list[str], metric_key: str, filters: Di
     return None
 
 def _pick_import_product_column(headers: list[str], metric_key: str, filters: Dict[str, Any]) -> Optional[str]:
-    """
-    Импорт бүтээгдэхүүнээр sheet:
-    product фильтерээс хамаараад
-      Нийт импорт / Хүнсний бүтээгдэхүүн / Нефтийн бүтээгдэхүүн / Автомашин, машин техник / Бусад
-    аль баганыг авахыг шийднэ.
-    """
     base_names = {
         "нийт импорт": "Нийт импорт",
         "бүх импорт": "Нийт импорт",
@@ -1253,7 +1462,7 @@ class ChatRequest(BaseModel):
 def root():
     return {
         "ok": True,
-        "excel": EXCEL_PATH,
+        "excel": str(EXCEL_PATH),
         "version": app.version,
         "last_reload": LAST_RELOAD_AT,
         "sheets": ALLOWED_SHEETS,
@@ -1405,7 +1614,6 @@ async def chat(body: ChatRequest, dep: None = Depends(require_key)):
 # =========================
 # Dashboard aggregated API
 # =========================
-
 _DASH_ALL_CACHE = {"ts": 0.0, "ttl": 60.0, "data": None}
 
 async def _get_json(client: httpx.AsyncClient, url: str):
@@ -1425,7 +1633,6 @@ async def dashboard_all(request: Request, debug: int = 0):
 
     debug=1 үед cache алгасна + __errors буцаана
     """
-
     now = time.time()
 
     # ✅ TTL cache (debug=1 үед cache алгасна)
@@ -1445,7 +1652,6 @@ async def dashboard_all(request: Request, debug: int = 0):
         "coalLatest": f"{base}/dashboard/coal-cny/latest",
     }
 
-    # ✅ Render дээр 10s дэндүү бага байсан → 30s болгоё
     timeout = httpx.Timeout(30.0, connect=10.0)
 
     ok: Dict[str, Any] = {}
@@ -1487,10 +1693,27 @@ def health():
 # ---------------- STARTUP ----------------
 @app.on_event("startup")
 async def startup():
-    perform_reload()
+    # ✅ create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
+    # ✅ seed primary admin (хэрвээ байхгүй бол)
+    async with SessionLocal() as db:
+        q = await db.execute(select(User).where(User.id == "admin-1"))
+        admin = q.scalar_one_or_none()
+        if not admin:
+            db.add(User(
+                id="admin-1",
+                name="System Admin",
+                email="admin@med.gov.mn",
+                password_hash=hash_password("admin123"),
+                role="admin",
+                disabled=False,
+            ))
+            await db.commit()
+
+    perform_reload()
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("app_configured:app", host="0.0.0.0", port=8010, reload=False)
